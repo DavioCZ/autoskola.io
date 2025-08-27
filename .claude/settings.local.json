@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\npm.cmd\" run dev)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node.exe\" \"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node_modules\\npm\\bin\\npm-cli.js\" run dev)",
+      "Read(/D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64/**)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\npx.cmd\" vite)",
+      "Bash(set PATH=\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\")",
+      "Bash(%PATH%)",
+      "Bash(npx:*)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node.exe\" \"./node_modules/.bin/vite\")",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node.exe\" ./node_modules/vite/bin/vite.js)",
+      "WebFetch(domain:github.com)",
+      "Bash(npm run build:*)",
+      "Bash(find:*)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node.exe\" \"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node_modules\\npm\\bin\\npm-cli.js\" run build)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node.exe\" \"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node_modules\\npm\\bin\\npx-cli.js\" tsc)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\bin\\git.exe\" add .)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@autoskola/client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@autoskola/shared": "1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vite": "^5.2.11"
+  }
+}

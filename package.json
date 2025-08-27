@@ -1,0 +1,14 @@
+{
+  "name": "autoskola-game-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "test": "npm test -w packages/shared",
+    "dev": "npm run dev -w apps/client"
+  }
+}
