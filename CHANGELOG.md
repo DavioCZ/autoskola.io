@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.1.1 (2025-08-28)
+
+### Added - HUD Minimapa s trail efektem
+- **Rozšířená minimapa s interaktivním zoomem**:
+  - `pointer-events: auto` pro minimapu - kolečko myši funguje nezávisle na hlavní mapě
+  - Konfigurovatelný zoom range (160-900m) přes `miniRangeMin`/`miniRangeMax` parametry
+  - Wheel zoom handler s faktorem 1.1x per "cvak" kolečka
+  - Oddálený výchozí záběr (500m) pro lepší přehled
+  
+- **Trail systém - "chlebové drobky" za vozidlem**:
+  - Automatický sběr bodů trasy s minimálním vzorkováním (1.5m)
+  - Fade efekt: starší body jsou průhlednější (alpha 0.15→0.7)
+  - Konfigurovatelná maximální délka trail (1500m) s automatickým ořezáváním
+  - Modrá barva (rgba(60, 210, 255)) s jemnou záři pro čitelnost
+  - Tloušťka čáry nezávislá na zoom minimapy
+  
+- **Smart trail management**:
+  - Auto-reset při teleportu >200m (respawn, přeskok mapy)
+  - Trail rotuje s mapou v course-up módu
+  - Vykreslování v mapových souřadnicích před markerem auta
+  - Optimalizovaný trimming algoritmus podle skutečné vzdálenosti
+
+- **Nové HUDOptions parametry**:
+  - `trailEnabled`: zapnutí/vypnutí trail (default: true)
+  - `trailMaxMeters`: maximální délka v metrech (default: 1200m)
+  - `trailSampleMinMeters`: minimální vzdálenost mezi body (default: 1.5m)
+  - `miniRangeMin`/`miniRangeMax`: limity zoom minimapy (default: 160-900m)
+
+### Changed
+- **HUD minimap rendering order**: Trail se vykresluje před markerem auta pro správné Z-ordering
+- **Main.ts konfigurace**: Aktualizovány parametry HUD pro nový trail systém a větší výchozí záběr
+
+### Technical Details
+- Trail body ukládány jako `{x:number, y:number}` v world souřadnicích
+- Kumulativní distance calculation pro přesný metrový trimming
+- Segmentové vykreslování s individuální alpha pro každý úsek
+- Nezávislé wheel events pro minimapu (event.preventDefault())
+
 ## v0.1.0 (2025-08-27)
 
 ### Added - Sémantický model silniční sítě

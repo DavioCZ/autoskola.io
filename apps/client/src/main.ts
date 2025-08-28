@@ -4,6 +4,7 @@ import { InputManager } from './input';
 import { Vehicle } from './vehicle';
 import { Camera } from './camera';
 import { MapLayer } from './mapLayer';
+import { HUD } from './hud';
 // TODO: Uncomment when build is fixed
 // import { ClientRoadNetwork } from './roadNetwork';
 // import { RoadNetworkRenderer } from './roadNetworkRenderer';
@@ -19,6 +20,32 @@ let targetZoom = 1;         // cílový zoom po kolečku
 
 // Pevný tile zoom (pro konzistentní šířky ulic)
 const BASE_MAP_ZOOM = 19;   // vyšší = víc detailů, ale větší dlaždice
+
+// --- Blinkery: společný timer a auto-cancel parametry ---
+const BLINK_HZ = 1.5;        // cca 90/min
+let blinkTimer = 0;
+let blinkOn = false;
+
+const deg2rad = (d:number)=> d*Math.PI/180;
+const angleDiff = (a:number,b:number)=>{
+  let d=a-b; while(d> Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI; return d;
+};
+
+// Auto-cancel: co považujeme za "hotovou" zatáčku
+const AUTO_TURN_MIN_ANGLE = deg2rad(45); // min změna směru
+const AUTO_TURN_MIN_DIST  = 10;          // min ujetá vzdálenost v metrech
+const ARM_STEER           = deg2rad(12); // kdy "ozbrojit" (výrazně vytočené)
+const RETURN_STEER        = deg2rad(8);  // vypnout, když se vrátí k rovně
+const ARM_SPEED_MS        = 0.5;         // min rychlost pro armování (m/s)
+
+// Stav automatiky blinkrů
+type Side = 'left'|'right'|null;
+const signalAuto = {
+  side: null as Side,
+  armed: false,
+  armAngle: 0,
+  armPos: {x:0,y:0},
+};
 // -------------------------------------------------------
 
 const debugOverlay = new DebugOverlay();
@@ -76,6 +103,22 @@ const camera = new Camera(player);
 // const roadNetworkRenderer = new RoadNetworkRenderer(roadNetwork);
 // roadNetwork.loadPragueNetwork().catch(err => console.error('Failed to load road network:', err));
 
+// HUD with mini-map
+const hud = new HUD({
+  enableMiniMap: true,
+  mapLayer,
+  getPlayer: () => ({ position: player.position, angle: player.angle }),
+  worldScalePxPerMeter: WORLD_SCALE,
+  metersAcross: 500,         // start víc oddálený
+  miniRangeMin: 160,         // klidně uprav
+  miniRangeMax: 900,
+  courseUp: true,
+  showNorthIndicator: false,
+  trailEnabled: true,
+  trailMaxMeters: 1500,
+  trailSampleMinMeters: 1.5
+});
+
 const entities = [player];
 let lastTime = 0;
 
@@ -99,6 +142,11 @@ canvas.addEventListener('wheel', (e) => {
 function gameLoop(timestamp: number) {
   const dt = (timestamp - lastTime) / 1000 || 0;
   lastTime = timestamp;
+
+  // Aktualizace blinkeru – jednotná fáze pro všechno
+  blinkTimer += dt;
+  blinkOn = (Math.floor(blinkTimer * BLINK_HZ) % 2) === 0;
+  eventBus.emit('blinkPhase', blinkOn);
 
   // Plynulý zoom
   zoom += (targetZoom - zoom) * ZOOM_SMOOTH * dt;
@@ -126,6 +174,60 @@ function gameLoop(timestamp: number) {
 
   // Kamera sleduje hráče (žádné offsety – zoom je kolem středu)
   camera.update();
+
+  // Auto-cancel logika blinkrů
+  {
+    // Urči aktivní stranu (neřešíme "výstražná" obě najednou)
+    const left = inputManager.leftBlinker;
+    const right = inputManager.rightBlinker;
+    const active: Side = left && !right ? 'left' : (right && !left ? 'right' : null);
+
+    // Rychlost (m/s) a vzdálenosti z world px
+    const speedMs = Math.hypot(player.velocity.x, player.velocity.y) / WORLD_SCALE;
+
+    // 1) Start/stop monitoringu podle změny stavu
+    if (active !== signalAuto.side) {
+      // Stav se změnil: reset/nové armování
+      signalAuto.side = active;
+      signalAuto.armed = false;
+      if (active) {
+        signalAuto.armAngle = player.angle;
+        signalAuto.armPos = { x: player.position.x, y: player.position.y };
+      }
+    }
+
+    // 2) Armování: začneme "počit" odbočku až když volant fakt vytočíš
+    if (signalAuto.side && !signalAuto.armed) {
+      const steer = (player as any).steering; // [rad], kladné = doprava (ve tvém modelu)
+      const correctSign = signalAuto.side === 'left' ? (steer < 0) : (steer > 0);
+      if (speedMs > ARM_SPEED_MS && correctSign && Math.abs(steer) > ARM_STEER) {
+        signalAuto.armed = true;
+        signalAuto.armAngle = player.angle;
+        signalAuto.armPos = { x: player.position.x, y: player.position.y };
+      }
+    }
+
+    // 3) Auto-cancel: splní-li se úhel, vzdálenost a návrat volantu, vypni
+    if (signalAuto.side && signalAuto.armed) {
+      const dx = (player.position.x - signalAuto.armPos.x) / WORLD_SCALE;
+      const dy = (player.position.y - signalAuto.armPos.y) / WORLD_SCALE;
+      const dist = Math.hypot(dx, dy);
+
+      // Směrová změna se hodnotí "ve prospěch" zvolené strany
+      const rawDelta = angleDiff(player.angle, signalAuto.armAngle);
+      const signedDelta = signalAuto.side === 'left' ? -rawDelta : rawDelta; // tvůj steering je vlevo záporný
+      const deltaOk = signedDelta >= AUTO_TURN_MIN_ANGLE;
+      const distOk = dist >= AUTO_TURN_MIN_DIST;
+      const returned = Math.abs((player as any).steering) <= RETURN_STEER;
+
+      if (deltaOk && distOk && returned) {
+        if (signalAuto.side === 'left') inputManager.leftBlinker = false;
+        if (signalAuto.side === 'right') inputManager.rightBlinker = false;
+        signalAuto.side = null;
+        signalAuto.armed = false;
+      }
+    }
+  }
 
   // Tile zoom je už zamčený v MapLayer, nepřepínáme ho
 
@@ -155,8 +257,59 @@ function gameLoop(timestamp: number) {
   ctx.save();
   ctx.translate(player.position.x, player.position.y);
   ctx.rotate(player.angle);
+  
+  // Tělo vozidla
   ctx.fillStyle = 'red';
   ctx.fillRect(-25, -15, 50, 30);  // 5m × 3m (10 px = 1 m)
+  
+  // Blinkry na vozidle: outline + fill + glow, vždy čitelné
+  {
+    const showLeft  = !!inputManager.leftBlinker;
+    const showRight = !!inputManager.rightBlinker;
+
+    if ((showLeft || showRight) && blinkOn) {
+      const halfL = 25; // půlka délky
+      const halfW = 15; // půlka šířky
+      const r = 5;      // poloměr lampy (px)
+
+      // Lokální souřadnice rohů (po rotate je to "ve směru jízdy")
+      const FL: [number, number] = [ +halfL, -halfW ];
+      const FR: [number, number] = [ +halfL, +halfW ];
+      const RL: [number, number] = [ -halfL, -halfW ];
+      const RR: [number, number] = [ -halfL, +halfW ];
+
+      const drawLamp = (x:number, y:number)=>{
+        // tlustý tmavý obrys podle zoomu
+        ctx.save();
+        ctx.lineWidth = Math.max(2, 2/zoom);
+        ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillStyle = '#FFC400'; // amber
+
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI*2);
+        ctx.fill();
+        ctx.stroke();
+
+        // jemná záře, která se prosadí i na světlém podkladu
+        const prevOp = ctx.globalCompositeOperation;
+        ctx.globalCompositeOperation = 'screen';
+        const g = ctx.createRadialGradient(x, y, r*0.3, x, y, r*2.2);
+        g.addColorStop(0, 'rgba(255, 200, 50, 0.75)');
+        g.addColorStop(1, 'rgba(255, 200, 50, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r*2.2, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalCompositeOperation = prevOp;
+
+        ctx.restore();
+      };
+
+      if (showLeft)  { drawLamp(FL[0], FL[1]); drawLamp(RL[0], RL[1]); }
+      if (showRight) { drawLamp(FR[0], FR[1]); drawLamp(RR[0], RR[1]); }
+    }
+  }
+  
   ctx.restore();
 
   // Debug směrové vektory
