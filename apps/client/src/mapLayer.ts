@@ -4,6 +4,21 @@ const EARTH_RADIUS = 6378137; // m
 const ORIGIN_SHIFT = Math.PI * EARTH_RADIUS;
 const INITIAL_RESOLUTION = (2 * Math.PI * EARTH_RADIUS) / TILE_BASE; // m/px na z=0
 
+type Provider = {
+  name: string;
+  url: string;                     // {z}/{x}/{y} templata
+  sub?: string[];                  // subdomény (a,b,c,d)
+  scaleParam?: boolean;            // přidá @2x pro retina
+  minZ?: number; maxZ?: number;
+};
+
+export const BASEMAPS: Record<string, Provider> = {
+  osm:      { name: 'OSM',      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', sub: ['a','b','c'], minZ: 0, maxZ: 19 },
+  positron: { name: 'Positron', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{scale}.png', sub: ['a','b','c','d'], scaleParam: true, minZ: 0, maxZ: 20 },
+  dark:     { name: 'Dark',     url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{scale}.png',  sub: ['a','b','c','d'], scaleParam: true, minZ: 0, maxZ: 20 },
+  wm:       { name: 'WM',       url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png', minZ: 0, maxZ: 19 },
+};
+
 export type MapLayerOptions = {
   worldScalePxPerMeter: number; // u tebe 10
   zoom: number;                 // Pevně zvolený tile zoom, např. 19 pro detail
@@ -48,6 +63,8 @@ export class MapLayer {
   private dpr: number;
   private tileCssSizePx: number; // kolik CSS px má mít dlaždice na plátně
   private tileImagePx: number;   // reálné rozlišení stahované dlaždice
+  private providerKey = 'osm';
+  private tileZoomBias = 0; // +/- kroky zoomu vůči this.zoom
 
   constructor(opts: MapLayerOptions) {
     this.worldScale = opts.worldScalePxPerMeter;
@@ -72,6 +89,14 @@ export class MapLayer {
     this.anchorMeters = { mx0: mx, my0: my };
   }
 
+  setProvider(key: keyof typeof BASEMAPS) {
+    if (BASEMAPS[key]) this.providerKey = key;
+  }
+
+  setTileZoomBias(bias: number) {
+    this.tileZoomBias = Math.round(bias || 0);
+  }
+
   lonLatToWorld(lon: number, lat: number) {
     const { mx, my } = lonLatToMeters(lon, lat);
     const worldX = (mx - this.anchorMeters.mx0) * this.worldScale;
@@ -87,7 +112,15 @@ export class MapLayer {
     return { lon, lat };
   }
 
-  draw(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: number, cameraWorldX: number, cameraWorldY: number) {
+  draw(
+    ctx: CanvasRenderingContext2D,
+    canvasW: number, canvasH: number, cameraWorldX: number, cameraWorldY: number,
+    opts?: { tileZoomBias?: number; provider?: keyof typeof BASEMAPS }
+  ) {
+    const prov = BASEMAPS[opts?.provider ?? this.providerKey];
+    const bias = (opts?.tileZoomBias ?? this.tileZoomBias) | 0;
+    const z = Math.max(prov.minZ ?? 0, Math.min((prov.maxZ ?? 22), this.zoom + bias));
+
     // Vypnout rozmazání při zvětšování/změnšování (lepší downsample)
     const prevSmooth = ctx.imageSmoothingEnabled;
     const prevQual = (ctx as any).imageSmoothingQuality;
@@ -110,34 +143,47 @@ export class MapLayer {
     const minMy = camMy - halfHm;
     const maxMy = camMy + halfHm;
 
-    const pMin = metersToPixels(minMx, maxMy, this.zoom);
-    const pMax = metersToPixels(maxMx, minMy, this.zoom);
+    const pMin = metersToPixels(minMx, maxMy, z);
+    const pMax = metersToPixels(maxMx, minMy, z);
 
     const tMinX = Math.floor(pMin.px / TILE_BASE);
     const tMinY = Math.floor(pMin.py / TILE_BASE);
     const tMaxX = Math.floor(pMax.px / TILE_BASE);
     const tMaxY = Math.floor(pMax.py / TILE_BASE);
 
+    // URL helper pro provider
+    const DPR = (globalThis.devicePixelRatio || 1) >= 1.5 ? 2 : 1;
+    const urlFor = (x:number,y:number)=> {
+      const s = prov.sub ? prov.sub[(x+y+z) % prov.sub.length] : '';
+      const scale = prov.scaleParam && DPR === 2 ? '@2x' : '';
+      return prov.url
+        .replace('{s}', s)
+        .replace('{z}', String(z))
+        .replace('{x}', String(x))
+        .replace('{y}', String(y))
+        .replace('{scale}', scale);
+    };
+
     // velikost dlaždice ve světě: (256 px * m/px na tomto z) převedeno do world px
-    const tileMeters = TILE_BASE * resolutionMetersPerPixel(this.zoom); // metry
+    const tileMeters = TILE_BASE * resolutionMetersPerPixel(z); // metry
     const tileWorldPx = tileMeters * this.worldScale;                   // world pixely
 
     for (let ty = tMinY - 1; ty <= tMaxY + 1; ty++) {
       for (let tx = tMinX - 1; tx <= tMaxX + 1; tx++) {
-        if (tx < 0 || ty < 0 || tx >= Math.pow(2, this.zoom) || ty >= Math.pow(2, this.zoom)) continue;
+        if (tx < 0 || ty < 0 || tx >= Math.pow(2, z) || ty >= Math.pow(2, z)) continue;
 
-        const key = `${this.zoom}/${tx}/${ty}@${this.dpr >= 1.5 ? '2x' : '1x'}`;
+        const key = `${opts?.provider ?? this.providerKey}:${z}:${tx}:${ty}`;
         let img = this.tileCache.get(key);
         if (!img) {
           img = new Image();
           img.crossOrigin = 'anonymous';
           img.referrerPolicy = 'no-referrer';
           img.decoding = 'async';
-          img.src = this.tileUrl(this.zoom, tx, ty, this.dpr);
+          img.src = urlFor(tx, ty);
           this.tileCache.set(key, img);
         }
 
-        const { minx, maxy } = tileBoundsMeters(tx, ty, this.zoom); // levý-horní roh v metrech
+        const { minx, maxy } = tileBoundsMeters(tx, ty, z); // levý-horní roh v metrech
         const worldX = (minx - this.anchorMeters.mx0) * this.worldScale;
         const worldY = (this.anchorMeters.my0 - maxy) * this.worldScale;
 

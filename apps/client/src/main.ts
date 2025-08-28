@@ -109,14 +109,12 @@ const hud = new HUD({
   mapLayer,
   getPlayer: () => ({ position: player.position, angle: player.angle }),
   worldScalePxPerMeter: WORLD_SCALE,
-  metersAcross: 500,         // start víc oddálený
-  miniRangeMin: 160,         // klidně uprav
-  miniRangeMax: 900,
+  metersAcross: 600,
+  miniRangeMin: 200,
+  miniRangeMax: 3000,
   courseUp: true,
   showNorthIndicator: false,
-  trailEnabled: true,
-  trailMaxMeters: 1500,
-  trailSampleMinMeters: 1.5
+  trailEnabled: true
 });
 
 const entities = [player];

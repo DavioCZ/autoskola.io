@@ -15,7 +15,15 @@
       "Bash(find:*)",
       "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node.exe\" \"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node_modules\\npm\\bin\\npm-cli.js\" run build)",
       "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node.exe\" \"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\Node.js\\node-v22.16.0-win-x64\\node_modules\\npm\\bin\\npx-cli.js\" tsc)",
-      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\bin\\git.exe\" add .)"
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\bin\\git.exe\" add .)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\bin\\git.exe\" config user.email \"david.kucera.ai@gmail.com\")",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\cmd\\git.exe\" config --global user.name)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\cmd\\git.exe\" config --global user.email)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\cmd\\git.exe\" status)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\cmd\\git.exe\" add apps/client/src/hud.ts apps/client/src/main.ts CHANGELOG.md)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\cmd\\git.exe\" commit -m \"$(cat <<''EOF''\nfeat: Enhanced HUD minimap with trail system and interactive zoom\n\n- Added interactive wheel zoom for minimap (160-900m range)\n- Implemented trail system with fade effect behind vehicle\n- Smart trail management with auto-reset on teleport (>200m)\n- Configurable trail parameters (max length, sampling distance)\n- Trail rotates with map in course-up mode\n- Blue trail color with shadow glow for better visibility\n- Independent minimap zoom from main camera\nEOF\n)\")",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\cmd\\git.exe\" push origin main)",
+      "Bash(\"D:\\OneDrive - SATRA, spol. s r.o\\PRIV\\VSC\\GIT\\cmd\\git.exe\" add .)"
     ],
     "deny": [],
     "ask": []

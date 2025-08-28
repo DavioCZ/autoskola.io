@@ -76,9 +76,12 @@
 ### ✅ Mapový podklad
 - [x] OSM tiles s GPS pozicováním v Praze
 - [x] Plynulý zoom kolečkem myši (0.8x - 2.0x)
-- [x] Fullscreen canvas s resize handling
+- [x] Fullscreen canvas s resize handling  
 - [x] Pevný tile zoom pro konzistentní šířky ulic
 - [x] Retina podpora (@2x tiles)
+- [x] **Multi-provider tile systém** s podporou OSM, Positron, Dark, Wikimedia
+- [x] **TileZoomBias** pro dynamické ostré dlaždice podle záběru
+- [x] **Optimalizovaná cache** s provider-specifickými klíči
 
 ### ✅ Sémantický model silniční sítě
 - [x] Kompletní TypeScript definice pro LaneGraph, PedNet, CrossLink
@@ -103,8 +106,16 @@
 - [ ] Výzvy s hodnocením
 - [ ] Zkouškový režim s celkovým skóre
 
-### UI a UX
-- [ ] Minimalistické HUD (rychlost, blinkry, skóre)
+### ✅ UI a UX
+- [x] Minimalistické HUD (rychlost, blinkry, tempomat, mini-mapa)
+- [x] **Rozšířená navigační minimapa s trail efektem**:
+  - [x] Interaktivní zoom kolečkem myši (200-3000m) nezávislý na hlavní mapě
+  - [x] Free-pan drag s Follow tlačítkem pro návrat na vozidlo
+  - [x] Trail systém s fade efektem za vozidlem (max 1500m)
+  - [x] Scale bar s dynamickými kroky (10m-5km)
+  - [x] Správná world→UI projekce šipky vozidla při pan módu
+  - [x] Ostré dlaždice s automatickým tileZoomBias
+  - [x] Čistý provider systém - minimapa sdílí podklad s hlavní mapou
 - [ ] Systém nápověd a instruktáže
 - [ ] Export telemetrie do JSON
 - [ ] Lokalizace textů porušení

@@ -22,12 +22,12 @@ export class ClientRoadNetwork {
       
       const builder = new NetworkBuilder();
       
-      // Small area around starting position
+      // Small area around starting position (Anděl area)
       const network = await builder.buildPragueNetwork({
-        south: 50.065,   // Expanded area around start position
-        west: 14.39, 
-        north: 50.08,
-        east: 14.41
+        south: 50.065,   // Area around Anděl metro station
+        west: 14.395, 
+        north: 50.075,
+        east: 14.405
       });
       
       this.manager = new RoadNetworkManager(network);

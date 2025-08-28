@@ -18,7 +18,7 @@ type HUDOptions = {
   trailMaxMeters?: number;        // výchozí 1200 m
   trailSampleMinMeters?: number;  // výchozí 1.5 m
   miniRangeMin?: number;          // min oddálení (m) – výchozí 160
-  miniRangeMax?: number;          // max oddálení (m) – výchozí 900
+  miniRangeMax?: number;          // max oddálení (m) – výčozí 900
 };
 
 export class HUD {
@@ -32,13 +32,17 @@ export class HUD {
   private miniWrap?: HTMLDivElement;
   private mini?: HTMLCanvasElement;
   private miniCtx?: CanvasRenderingContext2D | null;
-  private miniOptions = {
+  private miniState = {
     wpm: 10,
-    metersAcross: 280,
+    metersAcross: 420,
+    minAcross: 160,
+    maxAcross: 1200,
     courseUp: true,
+    follow: true,
+    center: { x: 0, y: 0 },    // free režim
+    dragging: false,
+    lastMouse: { x: 0, y: 0 },
     showN: false,
-    miniRangeMin: 160,
-    miniRangeMax: 900
   };
 
   private blinking = false;
@@ -56,13 +60,13 @@ export class HUD {
   constructor(opts: HUDOptions = {}) {
     const parent = opts.attachTo ?? document.body;
 
-    // Initialize minimap options from constructor arguments
-    this.miniOptions.wpm = opts.worldScalePxPerMeter ?? 10;
-    this.miniOptions.metersAcross = opts.metersAcross ?? 420; // víc oddálené jako default
-    this.miniOptions.courseUp = opts.courseUp ?? true;
-    this.miniOptions.showN = opts.showNorthIndicator ?? false;
-    this.miniOptions.miniRangeMin = opts.miniRangeMin ?? 160;
-    this.miniOptions.miniRangeMax = opts.miniRangeMax ?? 900;
+    // Initialize minimap state from constructor arguments
+    this.miniState.wpm = opts.worldScalePxPerMeter ?? 10;
+    this.miniState.metersAcross = opts.metersAcross ?? 500;
+    this.miniState.minAcross = opts.miniRangeMin ?? 160;
+    this.miniState.maxAcross = opts.miniRangeMax ?? 1200;
+    this.miniState.courseUp = opts.courseUp ?? true;
+    this.miniState.showN = opts.showNorthIndicator ?? false;
 
     this.trailMaxMeters = opts.trailMaxMeters ?? 1200;
     this.trailSampleMinMeters = opts.trailSampleMinMeters ?? 1.5;
@@ -120,73 +124,126 @@ export class HUD {
       this.miniWrap.appendChild(this.mini);
       this.root.appendChild(this.miniWrap);
 
-      // Wheel zoom jen pro minimapu (nezávislý na hlavním světě)
-      this.mini.addEventListener('wheel', (e) => {
+      // UI kontroly
+      const controls = document.createElement('div');
+      controls.style.position = 'absolute';
+      controls.style.right = '8px';
+      controls.style.top = '8px';
+      controls.style.display = 'flex';
+      controls.style.gap = '6px';
+      controls.style.pointerEvents = 'auto';
+
+      const btnFollow = document.createElement('button');
+      btnFollow.textContent = 'Follow';
+      btnFollow.title = 'Zpět na vozidlo';
+      this.styleBtn(btnFollow);
+
+      this.miniWrap!.appendChild(controls);
+      controls.appendChild(btnFollow);
+
+      btnFollow.onclick = () => { this.miniState.follow = true; };
+
+      // myš: wheel/drag/dblclick
+      this.mini!.addEventListener('wheel', (e) => {
         e.preventDefault();
-        const factor = e.deltaY < 0 ? 1/1.1 : 1.1; // nahoru přiblíží, dolů oddálí
-        const next = this.miniOptions.metersAcross * factor;
-        this.miniOptions.metersAcross = Math.min(this.miniOptions.miniRangeMax, Math.max(this.miniOptions.miniRangeMin, next));
+        const f = e.deltaY < 0 ? 1/1.12 : 1.12;
+        const next = this.miniState.metersAcross * f;
+        this.miniState.metersAcross = Math.min(this.miniState.maxAcross, Math.max(this.miniState.minAcross, next));
       }, { passive: false });
+
+      this.mini!.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        this.miniState.dragging = true;
+        this.miniState.follow = false;
+        this.miniState.lastMouse = { x: e.offsetX * (devicePixelRatio||1), y: e.offsetY * (devicePixelRatio||1) };
+      });
+      window.addEventListener('mouseup', ()=> this.miniState.dragging = false);
+      this.mini!.addEventListener('mousemove', (e) => {
+        if (!this.miniState.dragging) return;
+        const DPR = devicePixelRatio || 1;
+        const mx = e.offsetX * DPR, my = e.offsetY * DPR;
+        const dx = mx - this.miniState.lastMouse.x;
+        const dy = my - this.miniState.lastMouse.y;
+        this.miniState.lastMouse = { x: mx, y: my };
+
+        // přepočet posunu obrazovky → world posun (repektuje rotaci course-up)
+        const W = this.mini!.width;
+        const scale = W / (this.miniState.metersAcross * this.miniState.wpm);
+        let vx = dx / scale, vy = dy / scale;  // v "world pixelech"
+        if (this.miniState.courseUp) {
+          const player = opts.getPlayer!();
+          const theta = player.angle + Math.PI/2; // mapa rotuje o -(theta)
+          const c = Math.cos(theta), s = Math.sin(theta);
+          // otoč posun do světových os
+          const wx =  c*vx - s*vy;
+          const wy =  s*vx + c*vy;
+          vx = wx; vy = wy;
+        }
+        this.miniState.center.x -= vx;
+        this.miniState.center.y -= vy;
+      });
+
+      this.mini!.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        this.miniState.follow = true; // zpět na auto
+      });
 
       const drawMini = () => {
         const ctx = this.miniCtx!;
         const DPR = devicePixelRatio || 1;
         const W = this.mini!.width, H = this.mini!.height;
 
-        // Výpočet měřítka: chceme, aby přes šířku okna bylo N metrů
-        const metersAcross = this.miniOptions.metersAcross;
-        const worldPxAcross = metersAcross * this.miniOptions.wpm;
-
-        // Kolik canvas px připadá na 1 world px
-        const scale = W / worldPxAcross;
+        // kolik canvas px připadá na 1 world px
+        const scale = W / (this.miniState.metersAcross * this.miniState.wpm);
 
         // Data hráče
         const player = opts.getPlayer!();
         const px = player.position.x;
         const py = player.position.y;
 
+        // centrum
+        if (this.miniState.follow) {
+          this.miniState.center.x = px;
+          this.miniState.center.y = py;
+        }
+        const cx = this.miniState.center.x, cy = this.miniState.center.y;
+
         // TRASA – sběr bodu a ořez
         if (trailEnabled) {
           // pokud „teleport" (> 200 m), trail smaž a začni znovu
           const jumpMeters = 200;
           const last = this.trail[this.trail.length - 1];
-          if (last && (Math.hypot(px - last.x, py - last.y) > jumpMeters * this.miniOptions.wpm)) {
+          if (last && (Math.hypot(px - last.x, py - last.y) > jumpMeters * this.miniState.wpm)) {
             this.trail = [];
           }
           this.pushTrailPoint(px, py);
           this.trimTrailByMeters();
         }
 
-        // Podklad UI
+        // pozadí + clip
         ctx.save();
         ctx.clearRect(0,0,W,H);
-        ctx.fillStyle = '#0f1114';
-        ctx.fillRect(0,0,W,H);
+        ctx.fillStyle = '#0f1114'; ctx.fillRect(0,0,W,H);
+        const r = 12*DPR; this.roundRect(ctx,0,0,W,H,r); ctx.clip();
 
-        // Zaoblený klip
-        const r = 16 * DPR;
-        this.roundRect(ctx, 0,0,W,H,r); ctx.clip();
-
-        // Transformace: střed → hráč, měřítko, course-up
+        // transformace mapy
         ctx.translate(W/2, H/2);
         ctx.scale(scale, scale);
-        if (this.miniOptions.courseUp) {
-          // SPRÁVNĚ (nahoru = směr jízdy): přičteme π/2 k úhlu hráče
-          ctx.rotate(-(player.angle + Math.PI / 2));
-        }
-        ctx.translate(-px, -py);
+        if (this.miniState.courseUp) ctx.rotate(-(player.angle + Math.PI/2));
+        ctx.translate(-cx, -cy);
 
-        // OVERSCAN: dlaždice kresli přes větší AABB, aby rotace neusekla rohy
-        const overscan = Math.SQRT2;                 // ~1.414 pokryje libovolný úhel
-        const viewW = (W / scale) * overscan;        // world px
-        const viewH = (H / scale) * overscan;        // world px
+        // ostré dlaždice: spočítáme tile zoom bias podle rozsahu
+        const baseAcross = 420; // referenční „ostrost"
+        const bias = Math.max(-4, Math.min(4, Math.round(Math.log2(baseAcross / this.miniState.metersAcross))));
 
-        // Odbarvený raster podkladu
+        // overscan, grayscale atd.
+        const overscan = Math.SQRT2;
+        const viewW = (W/scale)*overscan, viewH = (H/scale)*overscan;
+
         ctx.save();
-        ctx.globalAlpha = 0.38;
-        // některé prohlížeče filter nemají; když ne, nic se nestane
-        try { (ctx as any).filter = 'grayscale(100%) brightness(1.12) contrast(0.92)'; } catch {}
-        opts.mapLayer.draw(ctx, viewW, viewH, px, py);
+        ctx.globalAlpha = 0.40;
+        try { (ctx as any).filter = 'grayscale(100%) brightness(1.08) contrast(0.95)'; } catch {}
+        opts.mapLayer.draw(ctx, viewW, viewH, cx, cy, { tileZoomBias: bias });
         try { (ctx as any).filter = 'none'; } catch {}
         ctx.restore();
 
@@ -214,53 +271,74 @@ export class HUD {
           ctx.restore();
         }
 
-// --- MARKER AUTA: kreslit v UI souřadnicích (ne v otočené mapě) ---
-{
-  // reset transformace -> kreslíme v pixelech canvasu
-  ctx.setTransform(1,0,0,1,0,0);
+        // reset transformace pro marker
+        ctx.setTransform(1,0,0,1,0,0);
 
-  const DPR = devicePixelRatio || 1;
-  const W = this.mini!.width, H = this.mini!.height;
+        // scale bar (metricky rozumný)
+        this.drawScaleBar(ctx, W, H, this.miniState.metersAcross, DPR);
 
-  // Mírný posun „dopředu", jako v navigacích (volitelné)
-  const forwardBiasPx = 10 * DPR;     // posuň marker o pár px nahoru v okně
-  const cx = W / 2;
-  const cy = H / 2 + forwardBiasPx;
+        // --- MARKER AUTA: promítnutí world -> UI, aby se při panu neposouval střed ---
+        {
+          const DPR = devicePixelRatio || 1;
+          const W = this.mini!.width, H = this.mini!.height;
 
-  // pevná velikost v pixelech, nezávislá na měřítku minimapy
-  const s = 24 * DPR;
+          // Kolik canvas px připadá na 1 world px
+          const scale = W / (this.miniState.metersAcross * this.miniState.wpm);
 
-  ctx.save();
-  ctx.translate(cx, cy);
-  // Šipka vždy míří NAHORU (course-up), proto žádná rotace tady!
-  ctx.fillStyle = '#ff3355';
-  ctx.strokeStyle = 'rgba(0,0,0,.7)';
-  ctx.lineWidth = Math.max(1.5*DPR, 2);
-  ctx.beginPath();
-  ctx.moveTo(0, -0.60 * s);          // špička
-  ctx.lineTo( 0.36 * s, 0.50 * s);   // pravý spodek
-  ctx.lineTo( 0,        0.22 * s);   // střed spodku
-  ctx.lineTo(-0.36 * s, 0.50 * s);   // levý spodek
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-}
+          // Vektor hráče vůči aktuálnímu centru minimapy (ve world px)
+          let dx = player.position.x - this.miniState.center.x;
+          let dy = player.position.y - this.miniState.center.y;
+
+          // Course-up: minimapa rotuje o -(angle+π/2), takže aplikuj STEJNOU rotaci na vektor
+          if (this.miniState.courseUp) {
+            const theta = -(player.angle + Math.PI / 2);
+            const c = Math.cos(theta), s = Math.sin(theta);
+            const rx = c*dx - s*dy;
+            const ry = s*dx + c*dy;
+            dx = rx; dy = ry;
+          }
+
+          // Převod do UI px
+          let px = W/2 + dx * scale;
+          let py = H/2 + dy * scale;
+
+          // „Forward bias" jen když follow == true (v „free" režimu je to matoucí)
+          if (this.miniState.follow) {
+            const forwardBiasPx = 10 * DPR;
+            py += forwardBiasPx;
+          }
+
+          // Kresba šipky (v UI souřadnicích, šipka míří NAHORU)
+          const s = 24 * DPR;
+          const ctx2 = this.miniCtx!;
+          ctx2.save();
+          ctx2.setTransform(1, 0, 0, 1, 0, 0);
+          ctx2.translate(px, py);
+          ctx2.fillStyle = '#ff3355';
+          ctx2.strokeStyle = 'rgba(0,0,0,.7)';
+          ctx2.lineWidth = Math.max(2, 2*DPR/2);
+          ctx2.beginPath();
+          ctx2.moveTo(0, -0.60*s);
+          ctx2.lineTo( 0.36*s, 0.50*s);
+          ctx2.lineTo( 0,      0.22*s);
+          ctx2.lineTo(-0.36*s, 0.50*s);
+          ctx2.closePath();
+          ctx2.fill();
+          ctx2.stroke();
+          ctx2.restore();
+        }
 
         // Kompas N
-        if (this.miniOptions.courseUp && this.miniOptions.showN) { // Přidána podmínka pro showN
-          ctx.setTransform(1,0,0,1,0,0);
+        if (this.miniState.courseUp && this.miniState.showN) {
           ctx.fillStyle = '#fff';
           ctx.globalAlpha = 0.85;
           ctx.font = `${12*DPR}px system-ui`;
           ctx.fillText('N', W - 20*DPR, 18*DPR);
         }
 
-        // Rámeček
-        ctx.setTransform(1,0,0,1,0,0);
+        // rámeček
         ctx.strokeStyle = 'rgba(255,255,255,.6)';
-        ctx.lineWidth = 2*DPR;
-        this.roundRect(ctx, 0,0,W,H,r); ctx.stroke();
+        ctx.lineWidth = 2*DPR; this.roundRect(ctx,0,0,W,H,r); ctx.stroke();
 
         ctx.restore();
         requestAnimationFrame(drawMini);
@@ -311,7 +389,7 @@ export class HUD {
     const last = this.trail[this.trail.length - 1];
     const dx = last ? px - last.x : 0;
     const dy = last ? py - last.y : 0;
-    const minWorld = this.trailSampleMinMeters * this.miniOptions.wpm; // v „world px"
+    const minWorld = this.trailSampleMinMeters * this.miniState.wpm; // v „world px"
     if (!last || Math.hypot(dx, dy) >= minWorld) {
       this.trail.push({ x: px, y: py });
     }
@@ -319,7 +397,7 @@ export class HUD {
 
   private trimTrailByMeters() {
     if (this.trail.length < 2) return;
-    const maxWorld = this.trailMaxMeters * this.miniOptions.wpm;
+    const maxWorld = this.trailMaxMeters * this.miniState.wpm;
     // dopočítej kumulovanou délku od konce směrem dozadu a ořízni
     let acc = 0;
     for (let i = this.trail.length - 1; i > 0; i--) {
@@ -330,6 +408,43 @@ export class HUD {
         break;
       }
     }
+  }
+
+  private styleBtn(b: HTMLButtonElement) {
+    b.style.pointerEvents = 'auto';
+    b.style.font = '600 12px system-ui';
+    b.style.padding = '4px 8px';
+    b.style.borderRadius = '8px';
+    b.style.border = '1px solid rgba(255,255,255,.35)';
+    b.style.background = 'rgba(0,0,0,.35)';
+    b.style.color = '#fff';
+    b.style.backdropFilter = 'blur(6px)';
+    b.style.cursor = 'pointer';
+  }
+
+  private drawScaleBar(ctx: CanvasRenderingContext2D, W:number, H:number, metersAcross:number, DPR:number){
+    // vyber hezký krok (10,20,50,100,200,500,1000...)
+    const steps = [10,20,50,100,200,500,1000,2000,5000];
+    let targetPx = 60*DPR; // chceme ~60–120 px
+    let best = steps[0], bestDiff = Infinity;
+    for (const s of steps){
+      const px = (s / metersAcross) * W;
+      const d = Math.abs(px - targetPx);
+      if (d < bestDiff) { bestDiff = d; best = s; }
+    }
+    const barPx = (best / metersAcross) * W;
+
+    const x = 10*DPR, y = H - 14*DPR;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    ctx.fillRect(x-4*DPR, y-10*DPR, barPx+8*DPR, 14*DPR);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x, y-6*DPR, barPx, 4*DPR);
+    ctx.font = `${10*DPR}px system-ui`;
+    ctx.textBaseline = 'bottom';
+    const label = best >= 1000 ? `${(best/1000).toFixed(best%1000?1:0)} km` : `${best} m`;
+    ctx.fillText(label, x, y-8*DPR);
+    ctx.restore();
   }
 
   // Helper function to draw rounded rectangles

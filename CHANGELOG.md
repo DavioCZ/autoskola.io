@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.1.3 (2025-08-28)
+
+### Fixed - Stabilizace minimapy: odstranění provider switching
+- **Zjednodušený provider systém**:
+  - Odstraněno "Map" tlačítko a basemap switching z UI minimapy
+  - Minimapa nyní vždy používá stejný provider jako hlavní mapa
+  - Eliminace konfliktů cache mezi různými tile providery
+  - Čistší a konzistentnější uživatelské rozhraní
+
+- **Optimalizovaná tile cache**:
+  - Jediná sdílená MapLayer instance pro hlavní pohled i minimapu
+  - Zjednodušené cache klíče bez provider duplicity
+  - Lepší výkon díky sdílené tile cache mezi pohledy
+
+### Removed
+- **UI prvky**: Map style switcher tlačítko z minimapy
+- **HUDOptions**: `basemap` parametr z konfigurace
+- **Provider override**: `provider` parametr z mapLayer.draw() volání
+
+### Technical Details  
+- MapLayer.draw() volána pouze s `{ tileZoomBias }` parametrem
+- Sdílená instance eliminuje duplicitní HTTP požadavky na tiles
+- Konzistentní zobrazení mezi hlavním pohledem a minimapou
+
+## v0.1.2 (2025-08-28)
+
+### Fixed - Navigační minimapa: opravy pan/zoom a provider switching
+- **Šipka vozidla při free-pan**:
+  - Implementována správná world→UI projekce šipky vozidla
+  - Šipka se nyní kreslí na relativní pozici vůči centru minimapy (ne vždy uprostřed)
+  - Forward bias (10px nahoru) pouze v follow módu pro lepší orientaci
+  - Course-up rotace správně aplikována na vektor pozice vozidla
+
+- **Rozšířené zoom limity**:
+  - `miniRangeMax` zvětšen na 3000m (z 1200m) pro větší rozsah oddálení
+  - `miniRangeMin` snížen na 150m pro lepší detail
+  - TileZoomBias rozsah rozšířen na ±4 pro ostré dlaždice i při velkých záběrech
+  - Wheel zoom factor upraven na 1.12x pro jemnější kroky
+
+- **Provider switching oprava**:
+  - Cache klíč obsahuje provider ID pro správné přepínání stylů map
+  - URL generování respektuje `@2x` retina parametr pro každý provider
+  - BASEMAPS export pro dostupnost všech 4 providerů (OSM/Positron/Dark/Wikimedia)
+  - Opraveny CORS hlavičky (`crossOrigin`, `referrerPolicy`) pro tile loading
+
+### Changed
+- **Main.ts konfigurace**: Aktualizovány zoom limity a výchozí záběr (600m start)
+- **MapLayer.draw()**: Nová signatura s `opts` parametrem pro provider a tileZoomBias
+
+### Technical Details
+- World-space vektor transformace pro správnou projekci UI prvků při rotaci
+- Nezávislá cache pro každý provider s unikátními klíči
+- Matematicky správná trigonometrie pro course-up transformace
+
 ## v0.1.1 (2025-08-28)
 
 ### Added - HUD Minimapa s trail efektem
