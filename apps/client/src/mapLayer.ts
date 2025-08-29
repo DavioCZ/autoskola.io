@@ -59,7 +59,9 @@ export class MapLayer {
   private tileUrl: (z: number, x: number, y: number, dpr: number) => string;
   private anchorMeters: { mx0: number; my0: number };
   private mPerWorldPx: number;
+  // LRU Cache s pevným limitem místo neomezeného Map
   private tileCache = new Map<string, HTMLImageElement>();
+  private readonly MAX_TILES = 200; // Pevný limit tiles
   private dpr: number;
   private tileCssSizePx: number; // kolik CSS px má mít dlaždice na plátně
   private tileImagePx: number;   // reálné rozlišení stahované dlaždice
@@ -95,6 +97,14 @@ export class MapLayer {
 
   setTileZoomBias(bias: number) {
     this.tileZoomBias = Math.round(bias || 0);
+  }
+
+  clearCache() {
+    this.tileCache.clear();
+  }
+
+  getCacheSize() {
+    return this.tileCache.size;
   }
 
   lonLatToWorld(lon: number, lat: number) {
@@ -180,6 +190,18 @@ export class MapLayer {
           img.referrerPolicy = 'no-referrer';
           img.decoding = 'async';
           img.src = urlFor(tx, ty);
+          
+          // LRU: if cache full, remove oldest entries until we have space
+          while (this.tileCache.size >= this.MAX_TILES) {
+            const firstKey = this.tileCache.keys().next().value;
+            if (firstKey) {
+              this.tileCache.delete(firstKey);
+            } else break;
+          }
+          this.tileCache.set(key, img);
+        } else {
+          // LRU: Move to end (most recently used)
+          this.tileCache.delete(key);
           this.tileCache.set(key, img);
         }
 

@@ -1,5 +1,7 @@
 // hud.ts – minimalistické HUD napojené na eventBus
 import { eventBus } from '@shared/eventBus';
+import { MinimapTrail } from './ui/minimapTrail';
+import { prof } from './utils/prof';
 
 type HUDOptions = {
   attachTo?: HTMLElement;
@@ -52,10 +54,11 @@ export class HUD {
   private cruiseOn = false;
   private cruiseTargetKmh: number | null = null;
 
-  // trail stav:
-  private trail: Array<{x:number,y:number}> = [];
-  private trailMaxMeters = 1200;
-  private trailSampleMinMeters = 1.5;
+  // trail stav - nový optimalizovaný systém:
+  private trail = new MinimapTrail();
+  private lastTrailX = 0;
+  private lastTrailY = 0; 
+  private trailInited = false;
 
   constructor(opts: HUDOptions = {}) {
     const parent = opts.attachTo ?? document.body;
@@ -200,6 +203,7 @@ export class HUD {
         const player = opts.getPlayer!();
         const px = player.position.x;
         const py = player.position.y;
+        const pangle = player.angle;
 
         // centrum
         if (this.miniState.follow) {
@@ -208,16 +212,9 @@ export class HUD {
         }
         const cx = this.miniState.center.x, cy = this.miniState.center.y;
 
-        // TRASA – sběr bodu a ořez
+        // TRASA – ultra-optimalizovaný trail update
         if (trailEnabled) {
-          // pokud „teleport" (> 200 m), trail smaž a začni znovu
-          const jumpMeters = 200;
-          const last = this.trail[this.trail.length - 1];
-          if (last && (Math.hypot(px - last.x, py - last.y) > jumpMeters * this.miniState.wpm)) {
-            this.trail = [];
-          }
-          this.pushTrailPoint(px, py);
-          this.trimTrailByMeters();
+          this.updateTrail(px, py);
         }
 
         // pozadí + clip
@@ -247,28 +244,12 @@ export class HUD {
         try { (ctx as any).filter = 'none'; } catch {}
         ctx.restore();
 
-        // VYKRESLENÍ TRAILU (v mapové transformaci, tedy rotuje s mapou)
-        if (trailEnabled && this.trail.length >= 2) {
-          ctx.save();
-          // tloušťka v pixelech bez ohledu na zoom
-          ctx.lineWidth = Math.max(2, 2 / scale);
-          // jemná záře pro čitelnost
-          ctx.shadowColor = 'rgba(30, 200, 255, 0.35)';
-          ctx.shadowBlur = 6 / scale;
-
-          // fade: projdi segmenty a snižuj alfa ke starším bodům
-          const n = this.trail.length;
-          for (let i = 1; i < n; i++) {
-            const a = this.trail[i-1], b = this.trail[i];
-            const t = i / n;                         // 0..1
-            const alpha = 0.15 + 0.55 * t;           // slabší u začátku, silnější u konce
-            ctx.strokeStyle = `rgba(60, 210, 255, ${alpha.toFixed(3)})`;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.stroke();
+        // VYKRESLENÍ TRAILU - ultra-rychlý Path2D s FPS auto-disable
+        if (trailEnabled) {
+          const fps = prof.getFpsEma();
+          if (fps > 40) {
+            this.trail.drawInWorld(ctx, { linePx: Math.max(1, 2 / scale), alpha: 0.95 });
           }
-          ctx.restore();
         }
 
         // reset transformace pro marker
@@ -385,28 +366,20 @@ export class HUD {
     });
   }
 
-  private pushTrailPoint(px:number, py:number) {
-    const last = this.trail[this.trail.length - 1];
-    const dx = last ? px - last.x : 0;
-    const dy = last ? py - last.y : 0;
-    const minWorld = this.trailSampleMinMeters * this.miniState.wpm; // v „world px"
-    if (!last || Math.hypot(dx, dy) >= minWorld) {
-      this.trail.push({ x: px, y: py });
+  private updateTrail(x: number, y: number) {
+    if (!this.trailInited) {
+      this.lastTrailX = x; 
+      this.lastTrailY = y; 
+      this.trailInited = true;
+      this.trail.add(x, y);
+      return;
     }
-  }
-
-  private trimTrailByMeters() {
-    if (this.trail.length < 2) return;
-    const maxWorld = this.trailMaxMeters * this.miniState.wpm;
-    // dopočítej kumulovanou délku od konce směrem dozadu a ořízni
-    let acc = 0;
-    for (let i = this.trail.length - 1; i > 0; i--) {
-      const a = this.trail[i], b = this.trail[i-1];
-      acc += Math.hypot(a.x - b.x, a.y - b.y);
-      if (acc > maxWorld) {
-        this.trail = this.trail.slice(i); // ponech konec
-        break;
-      }
+    const dx = x - this.lastTrailX, dy = y - this.lastTrailY;
+    // ~1.5 m při WORLD_SCALE=10 = 15 px vzdálenost
+    if (dx*dx + dy*dy >= (10*1.5)*(10*1.5)) { 
+      this.lastTrailX = x; 
+      this.lastTrailY = y;
+      this.trail.add(x, y);
     }
   }
 
